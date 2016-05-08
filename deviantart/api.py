@@ -42,7 +42,8 @@ class Api(object):
         client_secret,
         redirect_uri="",
         standard_grant_type="client_credentials",
-        scope="browse feed message note stash user user.manage comment.post collection"
+        scope="browse feed message note stash user user.manage comment.post collection",
+        token_dict=None
     ):
 
         """Instantiate Class and create OAuth Client"""
@@ -66,6 +67,9 @@ class Api(object):
             client_id=self.client_id,
             client_secret=self.client_secret,
         )
+
+        if token_dict:
+            self.oauth.__dict__.update(token_dict)
 
         if self.standard_grant_type == "client_credentials":
             self.auth()
