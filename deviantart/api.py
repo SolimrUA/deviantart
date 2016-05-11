@@ -10,6 +10,7 @@
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 from sanction import Client
+from json import loads
 
 from .deviation import Deviation
 from .user import User
@@ -21,9 +22,11 @@ class DeviantartError(Exception):
 
     """Representing API Errors"""
 
-    @property
-    def message(self):
-        return self.args[0]
+    def __init__(self, message, data={}):
+        self.message = "{}\n{}".format(message, data["error_description"])
+
+    def __str__(self):
+        return self.message
 
 
 class Api(object):
@@ -1725,17 +1728,20 @@ class Api(object):
 
         try:
             response = self.oauth.request(request_parameter, data=urlencode(post_data, True).encode())
-            self._checkResponseForErrors(response)
         except HTTPError as e:
-            raise DeviantartError(e)
+            code = e.code
+            body = e.read()
+            data = loads(body.decode("utf-8"))
+            if code == 400:
+                # Client error
+                raise DeviantartError(e, data)
+            elif code == 429:
+                print("Rate limit exceeded")
+            elif code == 500:
+                print("Retrying")
+            elif code == 503:
+                print("Servers is down")
+            else:
+                print("Unknown error")
 
         return response
-
-
-
-    def _checkResponseForErrors(self, response):
-
-        """Checks response for API errors"""
-
-        if 'error' in response:
-            raise DeviantartError(response['error_description'])
