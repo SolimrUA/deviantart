@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from urllib.error import HTTPError
 from sanction import Client
 from json import loads
+from time import time, sleep
 
 from .deviation import Deviation
 from .user import User
@@ -22,8 +23,13 @@ class DeviantartError(Exception):
 
     """Representing API Errors"""
 
-    def __init__(self, message, data={}):
-        self.message = "{}\n{}".format(message, data["error_description"])
+    def __init__(self, httperror, data={}, code=None):
+        self.message = httperror.__str__()
+        if data:
+            self.message += "\n{}".format(data["error_description"])
+            if "error_details" in data:
+                self.message += "\n{}".format("\n".join(data["error_details"]))
+        self.code = code
 
     def __str__(self):
         return self.message
@@ -76,6 +82,9 @@ class Api(object):
 
         if self.standard_grant_type == "client_credentials":
             self.auth()
+            
+        self.request_delay = 0.05
+        self.last_request = 0
 
 
 
@@ -1711,6 +1720,8 @@ class Api(object):
         return response
 
 
+    def placebo(self):
+        response = self._req('/placebo')
 
     def _req(self, endpoint, get_data=dict(), post_data=dict()):
 
@@ -1726,22 +1737,46 @@ class Api(object):
         else:
             request_parameter = endpoint
 
-        try:
-            response = self.oauth.request(request_parameter, data=urlencode(post_data, True).encode())
-        except HTTPError as e:
-            code = e.code
-            body = e.read()
-            data = loads(body.decode("utf-8"))
-            if code == 400:
-                # Client error
-                raise DeviantartError(e, data)
-            elif code == 429:
-                print("Rate limit exceeded")
-            elif code == 500:
-                print("Retrying")
-            elif code == 503:
-                print("Servers is down")
-            else:
-                print("Unknown error")
+        response = None
+        if self.request_delay > 0.05:
+            if time() - self.last_request > self.request_delay*100:
+                self.request_delay /= 2
+        if time() - self.last_request < self.request_delay:
+            print("Waiting...")
+            sleep(self.request_delay+self.last_request-time())
+        attempt = 1
+
+        while not response and attempt < 4:
+            try:
+                self.last_request = time()
+                response = self.oauth.request(request_parameter, data=urlencode(post_data, True).encode())
+            except HTTPError as e:
+                code = e.code
+                body = e.read()
+                if body:
+                    data = loads(body.decode("utf-8"))
+                else:
+                    data = None
+                if code == 400:
+                    # Client error, most probably request does not match deviantart API
+                    raise DeviantartError(e, data=data, code=code)
+                elif code == 401:
+                    # Unauthorized. You need to refresh token or stop doing illegal stuff
+                    raise DeviantartError(e, data=data, code=code)
+                elif code == 429:
+                    print("Rate limit exceeded, trying again in a bit")
+                    if self.request_delay < 1:
+                        self.request_delay = 1
+                    else:
+                        self.request_delay *= 2
+                elif code == 500:
+                    print("Deviantart internal error. Trying again...")
+                    attempt += 1
+                elif code == 503:
+                    print("Servers is down. Please try again later")
+                    return None
+                else:
+                    print("Unknown unhandled error with code {}".format(code))
+                    raise e
 
         return response
