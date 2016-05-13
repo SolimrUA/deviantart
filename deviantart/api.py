@@ -7,32 +7,19 @@
     :copyright: (c) 2015 by Kevin Eichhorn
 """
 
+from json import loads
+from sanction import Client
+from time import time, sleep
 from urllib.parse import urlencode
 from urllib.error import HTTPError
-from sanction import Client
-from json import loads
-from time import time, sleep
 
 from .deviation import Deviation
 from .user import User
 from .comment import Comment
 from .status import Status
 from .message import Message
+from .exception import DeviantartError, UnauthorizedError
 
-class DeviantartError(Exception):
-
-    """Representing API Errors"""
-
-    def __init__(self, httperror, data={}, code=None):
-        self.message = httperror.__str__()
-        if data:
-            self.message += "\n{}".format(data["error_description"])
-            if "error_details" in data:
-                self.message += "\n{}".format("\n".join(data["error_details"]))
-        self.code = code
-
-    def __str__(self):
-        return self.message
 
 
 class Api(object):
@@ -1759,10 +1746,10 @@ class Api(object):
                     data = None
                 if code == 400:
                     # Client error, most probably request does not match deviantart API
-                    raise DeviantartError(e, data=data, code=code)
+                    raise DeviantartError(e, data=data)
                 elif code == 401:
                     # Unauthorized. You need to refresh token or stop doing illegal stuff
-                    raise DeviantartError(e, data=data, code=code)
+                    raise UnauthorizedError(e, data=data)
                 elif code == 429:
                     print("Rate limit exceeded, trying again in a bit")
                     if self.request_delay < 1:
